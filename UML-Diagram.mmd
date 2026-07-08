@@ -1,11 +1,7 @@
 classDiagram
     class AnimalWhistle {
-        -AnimalWhistle instance
-        -ItemAPI api
         +onEnable() void
         +onDisable() void
-        +getInstance() AnimalWhistle
-        +getApi() ItemAPI
     }
 
     class AnimalWhistleConfig {
@@ -13,32 +9,58 @@ classDiagram
         -String animalWhistlePath
         -double detectionRadius
         -int glowDuration
-        -List~String~ whitelistedAnimals
-        -String whistleSound
+        -int cooldownSeconds
+        -Set~EntityType~ whitelistedAnimals
+        -Sound whistleSound
         -float soundVolume
         -float soundPitch
+        -String highlightedMessage
+        -String noAnimalsMessage
+        -String cooldownMessage
         +AnimalWhistleConfig(plugin: JavaPlugin)
+        +reload() void
+        -load() void
         +getAnimalWhistlePath() String
         +getDetectionRadius() double
         +getGlowDuration() int
-        +getWhitelistedAnimals() List~String~
-        +getWhistleSound() String
+        +getCooldownSeconds() int
+        +getWhitelistedAnimals() Set~EntityType~
+        +getWhistleSound() Sound
         +getSoundVolume() float
         +getSoundPitch() float
+        +getHighlightedMessage() String
+        +getNoAnimalsMessage() String
+        +getCooldownMessage() String
     }
 
     class WhistleInteractListener {
         -JavaPlugin plugin
         -ItemAPI api
         -AnimalWhistleConfig config
+        -ItemStack cachedWhistleTemplate
+        -Map~UUID,Long~ cooldowns
         +WhistleInteractListener(plugin: JavaPlugin, api: ItemAPI, config: AnimalWhistleConfig)
         +onPlayerInteract(event: PlayerInteractEvent) void
+        +clearItemCache() void
         -isAnimalWhistle(item: ItemStack) boolean
+        -getRemainingCooldown(player: Player) long
         -playWhistleSound(player: Player) void
+        -sendMessage(player: Player, message: String) void
+    }
+
+    class WhistleCommand {
+        -AnimalWhistleConfig config
+        -WhistleInteractListener listener
+        +WhistleCommand(config: AnimalWhistleConfig, listener: WhistleInteractListener)
+        +onCommand(sender, command, label, args) boolean
+        +onTabComplete(sender, command, alias, args) List~String~
     }
 
     AnimalWhistle "1" --> "1" AnimalWhistleConfig : creates
     AnimalWhistle "1" --> "1" WhistleInteractListener : registers
-    
+    AnimalWhistle "1" --> "1" WhistleCommand : registers
+
     WhistleInteractListener "1" --> "1" AnimalWhistleConfig : uses
     WhistleInteractListener "1" --> "1" ItemAPI : uses
+    WhistleCommand "1" --> "1" AnimalWhistleConfig : reloads
+    WhistleCommand "1" --> "1" WhistleInteractListener : clears cache

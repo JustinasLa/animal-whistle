@@ -12,7 +12,8 @@ items:
 settings:
   detection-radius: 64.0    # Radius in blocks to detect animals
   glow-duration: 5          # Duration in seconds for the glowing effect
-  whitelisted-animals:      # Entity types that will be highlighted
+  cooldown: 3               # Seconds between whistle uses per player
+  whitelisted-animals:      # Entity types that will be highlighted (empty = HORSE only)
     - HORSE
     - DONKEY
     - MULE
@@ -24,3 +25,9 @@ sound:
   type: "ITEM_GOAT_HORN_SOUND_6"
   volume: 4.0               # 1 Volume = 16 blocks of range (in this case, 64 blocks)
   pitch: 2.0                # Range between 0.5 (half speed) and 2.0 (double speed)
+
+# Player feedback messages (& color codes, empty = don't send)
+messages:
+  highlighted: "&aHighlighted &6%count% &aanimals nearby."
+  no-animals: "&7No animals found nearby."
+  cooldown: "&7The whistle is on cooldown for another &6%seconds%s&7."

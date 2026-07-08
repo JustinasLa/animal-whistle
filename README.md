@@ -5,7 +5,7 @@
 ![Java](https://img.shields.io/badge/Java-21-orange?logo=openjdk&logoColor=white)
 ![Paper](https://img.shields.io/badge/Paper-1.21+-blue)
 ![Maven](https://img.shields.io/badge/Build-Maven-red?logo=apachemaven&logoColor=white)
-![Version](https://img.shields.io/badge/Version-1.0.0-green)
+![Version](https://img.shields.io/badge/Version-1.1.0-green)
 
 Built for the [TFMC](https://www.patreon.com/c/TFMCRP) roleplay server, where it runs in production as a quality-of-life tool for finding mounts and pack animals.
 
@@ -19,19 +19,23 @@ Right-click with the **Animal Whistle** item and every whitelisted animal within
 |---|---|
 | **One-click detection** | Right-click the whistle to scan a configurable radius around the player |
 | **Glowing highlight** | Matched animals get the vanilla glowing effect for a configurable duration |
-| **Entity whitelist** | Only configured `EntityType`s light up (horses, donkeys, llamas by default); an empty whitelist matches everything |
+| **Entity whitelist** | Only configured `EntityType`s light up (horses, donkeys, llamas by default); an empty whitelist falls back to horses |
+| **Per-player cooldown** | Configurable cooldown (3s default) stops sound and scan spam |
+| **Player feedback** | Configurable chat messages report how many animals were highlighted |
 | **Audible feedback** | Configurable whistle sound, volume, and pitch played at the player's location |
-| **Config-driven design** | Item, radius, duration, whitelist, and sound all live in `config.yml` |
+| **Config-driven design** | Item, radius, duration, cooldown, whitelist, sound, and messages all live in `config.yml` |
 
 ## How It Works
 
-The plugin listens for `PlayerInteractEvent` (right-click in air or at a block):
+The plugin listens for `PlayerInteractEvent` (right-click in air or at a block, main hand only):
 
-1. The held item is validated against the configured whistle path via the TLibs `ItemAPI` (`isSimilar` against the template item).
-2. The whistle sound plays at the player's location in the `AMBIENT` sound category with the configured volume and pitch.
-3. All entities within the detection radius are scanned; living entities whose type matches the whitelist (case-insensitive) receive a `GLOWING` potion effect for the configured duration.
+1. The held item is validated against the configured whistle path via the TLibs `ItemAPI` (`isSimilar` against a cached template item).
+2. The interaction is cancelled (so the whistle never opens chests or doors) and the per-player cooldown is checked.
+3. The whistle sound plays at the player's location in the `AMBIENT` sound category with the configured volume and pitch.
+4. All entities within the detection radius are scanned; living entities whose type is in the whitelist (parsed to an `EnumSet<EntityType>` at config load) receive a `GLOWING` potion effect for the configured duration.
+5. The player gets a chat message with the number of animals highlighted.
 
-No scheduled tasks, no state — everything happens inside the single event handler.
+No scheduled tasks — everything happens inside the single event handler.
 
 ## Architecture
 
@@ -40,43 +44,53 @@ Small, deliberate footprint — each class has one job:
 ```
 src/main/java/tfmc/justin/
 ├── AnimalWhistle.java                 # Entry point: wiring, lifecycle, ItemAPI setup
+├── commands/
+│   └── WhistleCommand.java            # /animalwhistle reload + tab completion
 ├── config/
-│   └── AnimalWhistleConfig.java       # config.yml loading: item path, radius, duration, whitelist, sound
+│   └── AnimalWhistleConfig.java       # config.yml loading: item path, radius, cooldown, whitelist, sound, messages
 └── listeners/
-    └── WhistleInteractListener.java   # Right-click → validate item → sound + glow pipeline
+    └── WhistleInteractListener.java   # Right-click → validate item → cooldown → sound + glow pipeline
 ```
 
 ```mermaid
 classDiagram
     class AnimalWhistle {
-        -instance: AnimalWhistle
-        -api: ItemAPI
         +onEnable() void
         +onDisable() void
-        +getInstance() AnimalWhistle
-        +getApi() ItemAPI
     }
 
     class AnimalWhistleConfig {
+        +reload() void
         +getAnimalWhistlePath() String
         +getDetectionRadius() double
         +getGlowDuration() int
-        +getWhitelistedAnimals() List~String~
-        +getWhistleSound() String
+        +getCooldownSeconds() int
+        +getWhitelistedAnimals() Set~EntityType~
+        +getWhistleSound() Sound
         +getSoundVolume() float
         +getSoundPitch() float
     }
 
     class WhistleInteractListener {
         +onPlayerInteract(event: PlayerInteractEvent) void
+        +clearItemCache() void
         -isAnimalWhistle(item: ItemStack) boolean
+        -getRemainingCooldown(player: Player) long
         -playWhistleSound(player: Player) void
+    }
+
+    class WhistleCommand {
+        +onCommand(sender, command, label, args) boolean
+        +onTabComplete(sender, command, alias, args) List~String~
     }
 
     AnimalWhistle --> AnimalWhistleConfig : creates
     AnimalWhistle --> WhistleInteractListener : registers
+    AnimalWhistle --> WhistleCommand : registers
     WhistleInteractListener --> AnimalWhistleConfig : uses
     WhistleInteractListener --> ItemAPI : uses
+    WhistleCommand --> AnimalWhistleConfig : reloads
+    WhistleCommand --> WhistleInteractListener : clears cache
 ```
 
 *Full diagram: [UML-Diagram.mmd](UML-Diagram.mmd)*
@@ -84,12 +98,12 @@ classDiagram
 ### Design decisions
 
 - **Configuration over code** — the item, detection radius, glow duration, animal whitelist, and sound are all YAML edits, not releases.
-- **Event-driven, zero scheduling** — the plugin is a single stateless event handler; nothing runs when the whistle isn't being used.
+- **Event-driven, zero scheduling** — a single event handler plus a cooldown map; nothing runs when the whistle isn't being used.
 - **Abstraction over item plugins** — the whistle item resolves through the TLibs `ItemAPI`, so one config format covers MMOItems, ItemsAdder, and vanilla items with a one-character prefix.
 
 ## Installation
 
-1. Drop `animalwhistle-1.0.0.jar` into your server's `plugins/` folder
+1. Drop `animalwhistle-1.1.0.jar` into your server's `plugins/` folder
 2. Install **TLibs** (required). **MMOItems** / **ItemsAdder** are optional item sources
 3. Restart the server (or load with PlugManX)
 4. Configure `plugins/AnimalWhistle/config.yml` as needed
@@ -111,6 +125,10 @@ classDiagram
 3. All whitelisted animals within the detection radius glow for the configured duration
 4. Follow the glowing outlines (visible through walls) to your animals
 
+| Command | Description | Permission |
+|---|---|---|
+| `/animalwhistle reload` | Reload the config and item cache | `animalwhistle.reload` (default: op) |
+
 ## Configuration
 
 ```yaml
@@ -124,7 +142,8 @@ items:
 settings:
   detection-radius: 64.0    # Radius in blocks to detect animals
   glow-duration: 5          # Duration in seconds for the glowing effect
-  whitelisted-animals:      # Entity types that will be highlighted
+  cooldown: 3               # Seconds between whistle uses per player
+  whitelisted-animals:      # Entity types that will be highlighted (empty = HORSE only)
     - HORSE
     - DONKEY
     - MULE
@@ -136,6 +155,12 @@ sound:
   type: "ITEM_GOAT_HORN_SOUND_6"
   volume: 4.0               # 1.0 = 16 blocks of range (4.0 = 64 blocks)
   pitch: 2.0                # 0.5 (lower/slower) to 2.0 (higher/faster)
+
+# Player feedback messages (& color codes, empty = don't send)
+messages:
+  highlighted: "&aHighlighted &6%count% &aanimals nearby."
+  no-animals: "&7No animals found nearby."
+  cooldown: "&7The whistle is on cooldown for another &6%seconds%s&7."
 ```
 
 | Key | Default | Description |
@@ -143,7 +168,8 @@ sound:
 | `items.animal-whistle` | `m.pets.animal_whistle` | Item path for the whistle |
 | `settings.detection-radius` | `64.0` | Block radius to scan for animals |
 | `settings.glow-duration` | `5` | Seconds the glow effect lasts |
-| `settings.whitelisted-animals` | Horses, donkeys, mules, llamas | Bukkit `EntityType` names to highlight (empty list = all animals) |
+| `settings.cooldown` | `3` | Seconds between whistle uses per player |
+| `settings.whitelisted-animals` | Horses, donkeys, mules, llamas | Bukkit `EntityType` names to highlight (empty list = `HORSE` only) |
 | `sound.type` | `ITEM_GOAT_HORN_SOUND_6` | Bukkit sound name played on use |
 | `sound.volume` | `4.0` | Sound volume (1.0 = 16 blocks of audible range) |
 | `sound.pitch` | `2.0` | Sound pitch, 0.5–2.0 |

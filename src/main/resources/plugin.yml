@@ -1,6 +1,17 @@
 main: tfmc.justin.AnimalWhistle
-version: 1.0.0
+version: 1.1.0
 name: AnimalWhistle
 author: Justin
 api-version: 1.21
 depend: [TLibs]
+
+commands:
+  animalwhistle:
+    description: AnimalWhistle admin command
+    usage: /animalwhistle reload
+    permission: animalwhistle.reload
+
+permissions:
+  animalwhistle.reload:
+    description: Allows reloading the AnimalWhistle config
+    default: op
